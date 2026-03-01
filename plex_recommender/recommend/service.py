@@ -334,7 +334,22 @@ class RecommendationService:
 
         # Try RAG-based retrieval first
         if self.settings.use_rag:
-            available = self._get_content_via_rag(user_id, library_id)
+            # Determine an adaptive limit for RAG results so we don't always
+            # return the static `rag_top_k` (which defaults to 200). Prefer a
+            # batch-size sized candidate set, but respect any explicit
+            # `max_library_items` limit.
+            desired_limit = self.settings.rag_top_k
+            try:
+                batch_based = self.settings.get_effective_batch_size()
+                desired_limit = min(desired_limit, batch_based)
+            except Exception:
+                # Fall back to rag_top_k if batch calc fails for any reason
+                desired_limit = self.settings.rag_top_k
+
+            if self.settings.max_library_items > 0:
+                desired_limit = min(desired_limit, self.settings.max_library_items)
+
+            available = self._get_content_via_rag(user_id, library_id, limit=desired_limit)
             if available:
                 logger.info(
                     "using_rag_retrieval",
@@ -411,6 +426,7 @@ class RecommendationService:
         self,
         user_id: int,
         library_id: int | None = None,
+        limit: int | None = None,
     ) -> list[dict]:
         """Retrieve relevant content using RAG vector search.
 
@@ -427,10 +443,15 @@ class RecommendationService:
             service = EmbeddingsService()
             try:
                 # Get relevant content via vector similarity search
+                # Compute effective limit: prefer provided `limit`, then cap by
+                # configured `rag_top_k`. This allows RAG to adapt to the
+                # effective batch size / max_library_items and not be hard-locked
+                # to the static `rag_top_k` value.
+                effective_limit = limit or self.settings.rag_top_k
                 relevant = service.search_for_user(
                     user_id=user_id,
                     library_section_id=library_id,
-                    limit=self.settings.rag_top_k,
+                    limit=effective_limit,
                 )
 
                 if not relevant:
