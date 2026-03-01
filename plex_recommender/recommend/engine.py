@@ -323,7 +323,7 @@ class OpenRouterClient:
 
             # Handle rate limiting
             if response.status_code == 429:
-                logger.warning("openrouter_rate_limit")
+                logger.warning("openrouter_rate_limit", detail="Rate limit hit. Retrying...")
                 raise OpenRouterRateLimitError("OpenRouter rate limit exceeded")
 
             response.raise_for_status()
