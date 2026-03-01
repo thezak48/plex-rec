@@ -280,6 +280,7 @@ class OpenRouterClient:
         self.base_url = (base_url or settings.openrouter_base_url).rstrip("/")
         self.timeout = settings.ollama_timeout_seconds  # Reuse timeout setting
         self.context_window = settings.openrouter_context_window
+        self.enable_reasoning = getattr(settings, "openrouter_enable_reasoning", False)
 
         if not self.api_key:
             raise ValueError(
@@ -311,6 +312,11 @@ class OpenRouterClient:
             "messages": messages,
             "max_tokens": 16000,  # Response token limit
         }
+        # Some OpenRouter models require an explicit reasoning flag in the
+        # request payload to enable advanced reasoning features. Include it
+        # when configured.
+        if self.enable_reasoning:
+            payload["reasoning"] = {"enabled": True}
         if format_json:
             payload["response_format"] = {"type": "json_object"}
 

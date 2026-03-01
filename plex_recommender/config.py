@@ -71,6 +71,14 @@ class Settings(BaseSettings):
         description="Context window size for OpenRouter model (Claude=200k, GPT-4-turbo=128k)",
     )
 
+    # Some OpenRouter models (e.g., Grok variants) support or require an
+    # explicit "reasoning" flag to be enabled in the API call. Toggle this
+    # to include reasoning in chat requests when using OpenRouter.
+    openrouter_enable_reasoning: bool = Field(
+        default=False,
+        description="Enable provider-side reasoning features for OpenRouter models",
+    )
+
     # Scheduling configuration
     sync_interval_minutes: int = Field(
         default=30,
