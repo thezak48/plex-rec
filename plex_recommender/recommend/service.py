@@ -205,6 +205,9 @@ class RecommendationService:
         saved = 0
         expires_at = datetime.now(UTC) + timedelta(days=7)
 
+        # Determine which model was actually used by the engine/client
+        used_model = getattr(self.engine.client, "model", self.settings.ollama_model)
+
         with get_db_cursor() as cursor:
             for rec in recommendations:
                 # Skip low confidence recommendations
@@ -234,7 +237,7 @@ class RecommendationService:
                         rec.confidence,
                         rec.reasoning,
                         Json({"factors": rec.matching_factors}),
-                        self.settings.ollama_model,
+                        used_model,
                         prompt_hash,
                         expires_at,
                         library_id,
