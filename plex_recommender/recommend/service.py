@@ -436,15 +436,18 @@ class RecommendationService:
                 if not relevant:
                     return []
 
-                # Filter out any already-watched content (double-check)
-                with get_db_cursor(commit=False) as cursor:
-                    cursor.execute(
-                        "SELECT plex_rating_key FROM watch_stats WHERE user_id = %s",
-                        (user_id,),
-                    )
-                    watched_keys = {row["plex_rating_key"] for row in cursor.fetchall()}
+                # Optionally filter out any already-watched content (double-check)
+                if self.settings.exclude_watched_from_llm:
+                    with get_db_cursor(commit=False) as cursor:
+                        cursor.execute(
+                            "SELECT plex_rating_key FROM watch_stats WHERE user_id = %s",
+                            (user_id,),
+                        )
+                        watched_keys = {row["plex_rating_key"] for row in cursor.fetchall()}
 
-                return [r for r in relevant if r.get("plex_rating_key") not in watched_keys]
+                    return [r for r in relevant if r.get("plex_rating_key") not in watched_keys]
+                else:
+                    return relevant
 
             finally:
                 service.close()
@@ -481,6 +484,23 @@ class RecommendationService:
                 skipped=len(feedback_history.get("skipped", [])),
             )
 
+        # Optionally remove any available items that are already watched
+        if self.settings.exclude_watched_from_llm and watched:
+            watched_keys = {w.get("plex_rating_key") for w in watched}
+            original_count = len(available)
+            available = [a for a in available if a.get("plex_rating_key") not in watched_keys]
+            removed = original_count - len(available)
+            if removed:
+                logger.info(
+                    "filtered_available_removed_watched",
+                    user_id=user_id,
+                    removed=removed,
+                )
+
+        if not available:
+            logger.info("no_available_after_filtering", user_id=user_id)
+            return 0
+
         try:
             recommendations, prompt_hash = self.engine.generate_recommendations(
                 user_id=user_id,
@@ -515,6 +535,19 @@ class RecommendationService:
         library_id: int | None = None,
     ) -> int:
         """Generate recommendations in batches, aggregate results."""
+        # Optionally filter out watched items from the available pool before batching
+        if self.settings.exclude_watched_from_llm and watched:
+            watched_keys = {w.get("plex_rating_key") for w in watched}
+            original_total = len(all_available)
+            all_available = [a for a in all_available if a.get("plex_rating_key") not in watched_keys]
+            removed = original_total - len(all_available)
+            if removed:
+                logger.info(
+                    "filtered_watched_from_all_available",
+                    user_id=user_id,
+                    removed=removed,
+                )
+
         if batch_size is None:
             batch_size = self.settings.get_effective_batch_size()
         total_items = len(all_available)

@@ -112,6 +112,10 @@ class Settings(BaseSettings):
         default=True,
         description="Use compact format for prompts (reduces tokens by ~62%%)",
     )
+    exclude_watched_from_llm: bool = Field(
+        default=True,
+        description="When true, do not include items the user has already watched in LLM input lists",
+    )
     batch_processing: bool = Field(
         default=True,
         description="Process large libraries in batches to fit context window",
