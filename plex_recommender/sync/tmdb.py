@@ -161,9 +161,10 @@ class TMDBEnrichmentService:
             query = """
                 SELECT id, plex_rating_key, title, year, content_type, metadata_json, languages
                 FROM library_content
-                WHERE (keywords IS NULL OR array_length(keywords, 1) IS NULL)
+                WHERE ((keywords IS NULL OR array_length(keywords, 1) IS NULL)
                    OR tmdb_rating IS NULL
-                   OR (languages IS NULL OR array_length(languages, 1) IS NULL)
+                   OR (languages IS NULL OR array_length(languages, 1) IS NULL))
+                   AND tmdb_enriched_at IS NULL
                 ORDER BY added_at DESC
             """
             if limit:
@@ -183,7 +184,8 @@ class TMDBEnrichmentService:
                                SET keywords = COALESCE(%s, keywords),
                                    tmdb_rating = COALESCE(%s, tmdb_rating),
                                    tmdb_id = COALESCE(%s, tmdb_id),
-                                   languages = COALESCE(%s, languages)
+                                   languages = COALESCE(%s, languages),
+                                   tmdb_enriched_at = NOW()
                                WHERE id = %s""",
                             (
                                 result.get("keywords"),
