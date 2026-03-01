@@ -715,6 +715,7 @@ Generate recommendations using ONLY rating keys from the available content list 
 
         try:
             import time
+
             start = time.perf_counter()
             response = self.client.chat(
                 messages=[

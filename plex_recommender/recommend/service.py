@@ -572,7 +572,9 @@ class RecommendationService:
         if self.settings.exclude_watched_from_llm and watched:
             watched_keys = {w.get("plex_rating_key") for w in watched}
             original_total = len(all_available)
-            all_available = [a for a in all_available if a.get("plex_rating_key") not in watched_keys]
+            all_available = [
+                a for a in all_available if a.get("plex_rating_key") not in watched_keys
+            ]
             removed = original_total - len(all_available)
             if removed:
                 logger.info(

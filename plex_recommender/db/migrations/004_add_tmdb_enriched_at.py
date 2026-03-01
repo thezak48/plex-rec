@@ -9,6 +9,7 @@ from plex_recommender.logging import get_logger
 
 logger = get_logger(__name__)
 
+
 def upgrade() -> None:
     """Add tmdb_enriched_at column to library_content table."""
     migration_sql = """
@@ -32,6 +33,7 @@ def upgrade() -> None:
     with get_db_cursor() as cursor:
         cursor.execute(migration_sql)
     logger.info("migration_complete", migration="add_tmdb_enriched_at")
+
 
 def downgrade() -> None:
     """Remove tmdb_enriched_at column from library_content table."""
