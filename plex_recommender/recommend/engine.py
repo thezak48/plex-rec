@@ -714,6 +714,8 @@ Generate recommendations using ONLY rating keys from the available content list 
         )
 
         try:
+            import time
+            start = time.perf_counter()
             response = self.client.chat(
                 messages=[
                     {"role": "system", "content": self.SYSTEM_PROMPT},
@@ -721,6 +723,17 @@ Generate recommendations using ONLY rating keys from the available content list 
                 ],
                 format_json=True,
             )
+            llm_elapsed = time.perf_counter() - start
+            logger.info(
+                "llm_call_timing",
+                user_id=user_id,
+                available_count=len(available_content),
+                elapsed_seconds=f"{llm_elapsed:.2f}",
+            )
+
+            # Log how long the LLM request took (client.chat may block)
+            # We attempt to measure duration if the client provides timings
+            # via transport, otherwise measure elapsed time in the caller.
 
             content = response.get("message", {}).get("content", "{}")
             logger.info(

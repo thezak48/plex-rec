@@ -448,10 +448,22 @@ class RecommendationService:
                 # effective batch size / max_library_items and not be hard-locked
                 # to the static `rag_top_k` value.
                 effective_limit = limit or self.settings.rag_top_k
+                import time
+
+                start = time.perf_counter()
                 relevant = service.search_for_user(
                     user_id=user_id,
                     library_section_id=library_id,
                     limit=effective_limit,
+                )
+                elapsed = time.perf_counter() - start
+                logger.info(
+                    "rag_search_timing",
+                    user_id=user_id,
+                    library_id=library_id,
+                    limit=effective_limit,
+                    result_count=len(relevant) if relevant else 0,
+                    elapsed_seconds=f"{elapsed:.2f}",
                 )
 
                 if not relevant:
