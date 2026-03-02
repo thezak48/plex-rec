@@ -9,6 +9,7 @@ from plex_recommender.db import get_db_cursor
 from plex_recommender.logging import get_logger
 from plex_recommender.recommend.engine import RecommendationEngine, RecommendationItem
 from plex_recommender.recommend.feedback import get_feedback_for_prompt
+from plex_recommender.recommend.feedback import FeedbackService
 
 logger = get_logger(__name__)
 
@@ -575,6 +576,25 @@ class RecommendationService:
         # Optionally remove any available items that are already watched
         if self.settings.exclude_watched_from_llm and watched:
             watched_keys = {w.get("plex_rating_key") for w in watched}
+            # Also consult the DB for global Plex watched flags populated during sync
+            try:
+                available_keys = [a.get("plex_rating_key") for a in available]
+                if available_keys:
+                    with get_db_cursor(commit=False) as cursor:
+                        cursor.execute(
+                            "SELECT plex_rating_key FROM library_content WHERE plex_rating_key = ANY(%s) AND (plex_view_count > 0 OR plex_last_viewed_at IS NOT NULL)",
+                            (available_keys,),
+                        )
+                        plex_watched = {row["plex_rating_key"] for row in cursor.fetchall()}
+                    if plex_watched:
+                        watched_keys.update(plex_watched)
+                        logger.info(
+                            "augmented_watched_keys_from_db",
+                            user_id=user_id,
+                            added=len(plex_watched),
+                        )
+            except Exception:
+                logger.debug("plex_db_watch_check_failed", user_id=user_id)
             original_count = len(available)
             available = [a for a in available if a.get("plex_rating_key") not in watched_keys]
             removed = original_count - len(available)
@@ -626,6 +646,25 @@ class RecommendationService:
         # Optionally filter out watched items from the available pool before batching
         if self.settings.exclude_watched_from_llm and watched:
             watched_keys = {w.get("plex_rating_key") for w in watched}
+            # Also consult the DB for global Plex watched flags populated during sync
+            try:
+                available_keys = [a.get("plex_rating_key") for a in all_available]
+                if available_keys:
+                    with get_db_cursor(commit=False) as cursor:
+                        cursor.execute(
+                            "SELECT plex_rating_key FROM library_content WHERE plex_rating_key = ANY(%s) AND (plex_view_count > 0 OR plex_last_viewed_at IS NOT NULL)",
+                            (available_keys,),
+                        )
+                        plex_watched = {row["plex_rating_key"] for row in cursor.fetchall()}
+                    if plex_watched:
+                        watched_keys.update(plex_watched)
+                        logger.info(
+                            "augmented_watched_keys_from_db",
+                            user_id=user_id,
+                            added=len(plex_watched),
+                        )
+            except Exception:
+                logger.debug("plex_db_watch_check_failed", user_id=user_id)
             original_total = len(all_available)
             all_available = [
                 a for a in all_available if a.get("plex_rating_key") not in watched_keys

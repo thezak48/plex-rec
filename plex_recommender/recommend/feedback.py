@@ -213,6 +213,37 @@ class FeedbackService:
 
         return ratings
 
+    def get_watched_keys_from_plex(self, rating_keys: list[str]) -> set[str]:
+        """Check Plex server for watched markers for the given rating keys.
+
+        This is an admin-level check (uses the configured server token) and
+        detects items that have been marked watched on the server (e.g.
+        `viewCount` > 0 or `lastViewedAt` present). Returns a set of
+        rating_key strings that appear watched.
+        """
+        watched: set[str] = set()
+        if not rating_keys:
+            return watched
+
+        try:
+            for rating_key in rating_keys:
+                try:
+                    item = self.server.fetchItem(int(rating_key))
+                    # Global view count (any user) or lastViewedAt indicate watched
+                    if getattr(item, "viewCount", None) and int(item.viewCount) > 0:
+                        watched.add(rating_key)
+                        continue
+                    if getattr(item, "lastViewedAt", None):
+                        watched.add(rating_key)
+                        continue
+                except Exception:
+                    # Skip items we can't fetch
+                    continue
+        except Exception as e:
+            logger.warning("plex_watched_fetch_failed", error=str(e))
+
+        return watched
+
     def _determine_feedback(
         self,
         rating_key: str,

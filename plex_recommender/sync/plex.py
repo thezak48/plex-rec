@@ -208,6 +208,9 @@ class PlexSyncService:
             # Handle dates
             added_at = getattr(item, "addedAt", None)
             originally_available = getattr(item, "originallyAvailableAt", None)
+            # Plex global watched markers
+            plex_view_count = getattr(item, "viewCount", None)
+            plex_last_viewed = getattr(item, "lastViewedAt", None)
 
             # Get parent/grandparent keys for episodes
             grandparent_key = None
@@ -232,6 +235,8 @@ class PlexSyncService:
                 getattr(item, "rating", None),
                 getattr(item, "audienceRating", None),
                 getattr(item, "duration", None),
+                plex_view_count,
+                plex_last_viewed,
                 item.thumbUrl if hasattr(item, "thumbUrl") else None,
                 getattr(item, "artUrl", None),
                 added_at,
@@ -262,7 +267,7 @@ class PlexSyncService:
                     title, original_title, year, summary, genres,
                     actors, keywords, languages,
                     studio, content_rating, rating, audience_rating,
-                    duration_ms, thumb_url, art_url, added_at,
+                    duration_ms, plex_view_count, plex_last_viewed_at, thumb_url, art_url, added_at,
                     originally_available_at, parent_rating_key,
                     grandparent_rating_key, metadata_json
                 )
@@ -281,6 +286,8 @@ class PlexSyncService:
                     rating = EXCLUDED.rating,
                     audience_rating = EXCLUDED.audience_rating,
                     duration_ms = EXCLUDED.duration_ms,
+                    plex_view_count = EXCLUDED.plex_view_count,
+                    plex_last_viewed_at = EXCLUDED.plex_last_viewed_at,
                     thumb_url = EXCLUDED.thumb_url,
                     art_url = EXCLUDED.art_url,
                     metadata_json = EXCLUDED.metadata_json,
