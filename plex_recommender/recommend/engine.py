@@ -10,6 +10,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from plex_recommender.config import get_settings
 from plex_recommender.logging import get_logger
+from plex_recommender.db import get_db_cursor
 
 logger = get_logger(__name__)
 
@@ -338,6 +339,27 @@ class OpenRouterClient:
             # Log the raw response for debugging
             logger.debug("openrouter_raw_response", response_keys=list(data.keys()))
 
+            # If the model finished early due to length (truncation) or any
+            # non-standard finish reason, treat this as an error so we don't
+            # attempt to parse a partial/truncated JSON payload.
+            try:
+                choices = data.get("choices", [])
+                if choices and isinstance(choices, list):
+                    finish_reason = choices[0].get("finish_reason")
+                    if finish_reason and finish_reason != "stop":
+                        logger.warning(
+                            "openrouter_finish_reason",
+                            finish_reason=finish_reason,
+                            detail="LLM response may be truncated or incomplete",
+                        )
+                        raise OpenRouterError(f"OpenRouter finished with reason: {finish_reason}")
+            except OpenRouterError:
+                raise
+            except Exception:
+                # Non-fatal: if structure is unexpected, continue and let
+                # downstream handling catch parse errors.
+                pass
+
             # Check for OpenRouter error response
             if "error" in data:
                 error_msg = data["error"].get("message", str(data["error"]))
@@ -351,11 +373,30 @@ class OpenRouterClient:
                 logger.error("openrouter_invalid_response", data=data)
                 raise OpenRouterError(f"OpenRouter returned invalid response: {data}")
 
-            content = data["choices"][0]["message"]["content"]
+            content = data["choices"][0]["message"].get("content")
+
+            # If the model returned no content, treat as an error so we can
+            # retry or surface a clear message instead of attempting to
+            # parse an empty string later.
+            if content is None or (isinstance(content, str) and content.strip() == ""):
+                logger.error("openrouter_empty_content", data=data)
+                raise OpenRouterError("OpenRouter returned empty content")
+
+            # If the content is already a structured object (dict/list),
+            # convert it to a JSON string so downstream code can `json.loads`
+            # it reliably. If it's a non-string scalar, coerce to string.
+            if not isinstance(content, str):
+                try:
+                    content_str = json.dumps(content)
+                except Exception:
+                    content_str = str(content)
+            else:
+                content_str = content
+
             return {
                 "message": {
                     "role": "assistant",
-                    "content": content,
+                    "content": content_str,
                 },
                 "model": data.get("model", self.model),
                 "usage": data.get("usage", {}),
@@ -792,6 +833,30 @@ Generate recommendations using ONLY rating keys from the available content list 
                 except Exception as e:
                     logger.debug("skipping_invalid_recommendation", error=str(e), data=rec_data)
                     continue
+
+            # Double-check against user's watched items in the database and remove
+            # any recommendations that the user has already watched. This is a
+            # safety net in case upstream filtering missed watched items.
+            try:
+                with get_db_cursor(commit=False) as cursor:
+                    cursor.execute(
+                        "SELECT plex_rating_key FROM watch_stats WHERE user_id = %s",
+                        (user_id,),
+                    )
+                    watched_keys = {row["plex_rating_key"] for row in cursor.fetchall()}
+            except Exception:
+                watched_keys = set()
+
+            if watched_keys:
+                before_count = len(valid_recs)
+                valid_recs = [r for r in valid_recs if r.rating_key not in watched_keys]
+                removed = before_count - len(valid_recs)
+                if removed:
+                    logger.info(
+                        "filtered_out_watched_recommendations",
+                        user_id=user_id,
+                        removed=removed,
+                    )
 
             logger.debug(
                 "parsed_recommendations",

@@ -202,6 +202,17 @@ class RecommendationService:
         if not recommendations:
             return 0
 
+        # Fetch watched keys once to avoid inserting already-watched items
+        try:
+            with get_db_cursor(commit=False) as cursor:
+                cursor.execute(
+                    "SELECT plex_rating_key FROM watch_stats WHERE user_id = %s",
+                    (user_id,),
+                )
+                existing_watched = {row["plex_rating_key"] for row in cursor.fetchall()}
+        except Exception:
+            existing_watched = set()
+
         saved = 0
         expires_at = datetime.now(UTC) + timedelta(days=7)
 
@@ -212,6 +223,15 @@ class RecommendationService:
             for rec in recommendations:
                 # Skip low confidence recommendations
                 if rec.confidence < self.settings.min_confidence_score:
+                    continue
+
+                # Skip if the user has already watched this item
+                if rec.rating_key in existing_watched:
+                    logger.info(
+                        "skipping_saving_watched_recommendation",
+                        user_id=user_id,
+                        rating_key=rec.rating_key,
+                    )
                     continue
 
                 cursor.execute(
@@ -334,6 +354,39 @@ class RecommendationService:
         # Gather user data
         preferences = self.get_user_preferences(user_id)
         watched = self.get_watched_content(user_id, limit=watch_limit)
+
+        # Deactivate any existing active recommendations for items the user
+        # has already watched to avoid showing stale suggestions.
+        try:
+            watched_keys = {w.get("plex_rating_key") for w in watched}
+            if watched_keys:
+                with get_db_cursor() as cursor:
+                    if library_id is not None:
+                        cursor.execute(
+                            """
+                            UPDATE recommendations
+                            SET is_active = false
+                            WHERE user_id = %s
+                              AND plex_rating_key = ANY(%s)
+                              AND library_section_id = %s
+                              AND is_active = true
+                            """,
+                            (user_id, list(watched_keys), library_id),
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            UPDATE recommendations
+                            SET is_active = false
+                            WHERE user_id = %s
+                              AND plex_rating_key = ANY(%s)
+                              AND is_active = true
+                            """,
+                            (user_id, list(watched_keys)),
+                        )
+        except Exception:
+            # Non-fatal; continue generation even if cleanup fails
+            logger.debug("failed_to_deactivate_watched_recommendations", user_id=user_id)
 
         # Try RAG-based retrieval first
         if self.settings.use_rag:
