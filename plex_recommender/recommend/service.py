@@ -390,18 +390,17 @@ class RecommendationService:
 
         # Try RAG-based retrieval first
         if self.settings.use_rag:
-            # Determine an adaptive limit for RAG results so we don't always
-            # return the static `rag_top_k` (which defaults to 200). Prefer a
-            # batch-size sized candidate set, but respect any explicit
-            # `max_library_items` limit.
-            desired_limit = self.settings.rag_top_k
+            # Compute an adaptive limit for RAG results based on the effective
+            # batch size (which already considers context window + token
+            # budgets). This lets RAG scale up when the model/context can
+            # handle more items (e.g., 1M context window). We still respect
+            # an explicit `max_library_items` limit.
             try:
-                batch_based = self.settings.get_effective_batch_size()
-                desired_limit = min(desired_limit, batch_based)
+                desired_limit = self.settings.get_effective_batch_size()
             except Exception:
-                # Fall back to rag_top_k if batch calc fails for any reason
                 desired_limit = self.settings.rag_top_k
 
+            # If operator configured a hard max number of library items, apply it
             if self.settings.max_library_items > 0:
                 desired_limit = min(desired_limit, self.settings.max_library_items)
 
